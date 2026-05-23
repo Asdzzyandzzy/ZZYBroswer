@@ -1,7 +1,7 @@
 {
   "name": "zzy-browser",
   "version": "0.1.0",
-  "description": "Local programmable Electron browser shell for chatgpt.com",
+  "description": "A local programmable Electron browser shell for driving the visible ChatGPT web app from scripts.",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
