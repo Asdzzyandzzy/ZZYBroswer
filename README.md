@@ -1,6 +1,6 @@
-# ChatGPT Web Local API
+# ChatGPT Local API Creator
 
-Turn the logged-in ChatGPT web app into a local HTTP API service.
+Create a local HTTP API from the logged-in ChatGPT web app.
 
 This project opens the real `chatgpt.com` page in Electron, keeps that browser window visible, preserves your local login session, and exposes `http://127.0.0.1:3123` so scripts on your machine can send prompts, read replies, open chats, and work with Projects.
 

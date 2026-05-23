@@ -1,7 +1,7 @@
 {
-  "name": "chatgpt-web-local-api",
+  "name": "chatgpt-local-api-creator",
   "version": "0.1.0",
-  "description": "Turn the logged-in ChatGPT web app into a local HTTP API service for scripts on your machine.",
+  "description": "Create a local HTTP API service from the logged-in ChatGPT web app.",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
