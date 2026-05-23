@@ -279,7 +279,8 @@ function getAutomationScript() {
       try {
         const url = new URL(href, location.origin);
         if (url.hostname !== 'chatgpt.com') return null;
-        if (!url.pathname.startsWith('/c/')) return null;
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (!parts.includes('c')) return null;
         return url.href;
       } catch (_error) {
         return null;
@@ -289,7 +290,9 @@ function getAutomationScript() {
     const chatIdFromUrl = (href) => {
       const url = normalizeChatUrl(href);
       if (!url) return null;
-      return new URL(url).pathname.split('/').filter(Boolean)[1] || null;
+      const parts = new URL(url).pathname.split('/').filter(Boolean);
+      const chatIndex = parts.findIndex((part) => part.toLowerCase() === 'c');
+      return chatIndex >= 0 ? parts[chatIndex + 1] || null : null;
     };
 
     const getVisibleChats = () => {
