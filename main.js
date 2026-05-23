@@ -434,6 +434,7 @@ function getAutomationScript() {
       const seen = new Set();
       const scoped = [];
       const fallback = [];
+      const isDateLike = (line) => /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}\/\d{1,2}|\d{4}|\d{1,2}月)/i.test(line);
 
       const addCandidate = (el, url, source) => {
         if (!visible(el)) return;
@@ -447,16 +448,19 @@ function getAutomationScript() {
 
         const lowerTitle = title.toLowerCase();
         const lowerText = rawText.toLowerCase();
+        if (lowerTitle === project.title.toLowerCase() && lines.length <= 1) return;
         if (['chats', 'sources', 'share'].includes(lowerTitle)) return;
         if (lowerText.includes('new chat in') || lowerText.includes('instant')) return;
         if (title === '...' || title === '⋯') return;
 
-        const key = url || rawText;
+        const previewLines = lines.slice(1).filter((line) => !isDateLike(line));
+        const preview = previewLines.join('\n');
+        const key = url || `${title}\n${previewLines[0] || ''}`.toLowerCase();
         if (seen.has(key)) return;
 
         const chat = {
           title,
-          preview: lines.slice(1).join('\n') || '',
+          preview,
           url,
           chatId: url ? chatIdFromUrl(url) : null,
           projectId: project.projectId,
@@ -492,7 +496,10 @@ function getAutomationScript() {
           '[role="button"]',
           'button',
           '[tabindex]:not([tabindex="-1"])',
-          'div'
+          '[data-testid*="conversation"]',
+          '[data-testid*="thread"]',
+          '[data-testid*="chat"]',
+          '[class*="cursor-pointer"]'
         ].join(',');
 
         for (const el of root.querySelectorAll(cardSelector)) {
@@ -501,6 +508,7 @@ function getAutomationScript() {
           const rect = el.getBoundingClientRect();
           if (rect.width < 180 || rect.height < 32 || rect.height > 220) continue;
           if (el.querySelector('textarea, [contenteditable="true"]')) continue;
+          if (el.querySelector('input, button, [role="tab"]')) continue;
 
           const text = textOf(el);
           if (!text || text.length > 500) continue;
@@ -559,8 +567,22 @@ function getAutomationScript() {
       const scanRoots = roots.length ? roots : [document.body];
 
       for (const root of scanRoots) {
-        const cards = [...root.querySelectorAll('[role="link"], [role="button"], button, [tabindex]:not([tabindex="-1"]), div')]
-          .filter((el) => visible(el) && !el.closest('nav') && !el.closest('aside'));
+        const selector = [
+          '[role="link"]',
+          '[role="button"]',
+          'button',
+          '[tabindex]:not([tabindex="-1"])',
+          '[data-testid*="conversation"]',
+          '[data-testid*="thread"]',
+          '[data-testid*="chat"]',
+          '[class*="cursor-pointer"]'
+        ].join(',');
+        const cards = [...root.querySelectorAll(selector)]
+          .filter((el) => {
+            if (!visible(el) || el.closest('nav') || el.closest('aside')) return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width >= 180 && rect.height >= 32 && rect.height <= 220;
+          });
 
         const match = cards.find((el) => {
           const text = textOf(el).toLowerCase();

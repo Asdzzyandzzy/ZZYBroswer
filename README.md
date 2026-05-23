@@ -315,7 +315,7 @@ Project 相关接口也会尽量返回 `ids`。在 Project 内部 chat 页面上
 
 不同 ChatGPT 页面版本的 Project URL 格式可能不同，所以 `projectId` 是从当前 URL 中 best-effort 解析出来的。最稳的记录方式仍然是保存完整 `url`。
 
-当你停在 Project 首页时，`chatId` 和 `projectChatId` 为 `null` 是正常的，因为当前没有打开具体 chat。打开 Project 里的某条 chat 后，`/ids` 才会返回对应的 `projectChatId`。
+当你停在 Project 首页时，`chatId` 和 `projectChatId` 为 `null` 是正常的，因为当前没有打开具体 chat。`projectId` 只能用来打开 Project，不能当成 chat id 使用；直接拿 `projectId` 去打开 chat 会 404。打开 Project 里的某条 chat 后，`/ids` 才会返回对应的 `projectChatId`。
 
 如果你调用 `/new-project-chat` 后还没有发送任何消息，返回里可能还没有 `chatId`。发出第一条 `/chat` 后，再从 `/chat` 返回或 `/ids` 读取新的 Project chat id。
 
