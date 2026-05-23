@@ -104,6 +104,59 @@ curl -X POST http://127.0.0.1:3123/new-chat
 
 它会优先点击 ChatGPT 页面里的 New chat/新聊天按钮。如果找不到按钮，会兜底重新加载 `https://chatgpt.com/`。
 
+### 打开历史会话 URL
+
+如果你保存过某个 ChatGPT 会话 URL，可以直接打开：
+
+```bash
+curl -X POST http://127.0.0.1:3123/open-url \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
+```
+
+为了安全，`/open-url` 只允许打开 `https://chatgpt.com/...`。
+
+### 列出可见历史会话
+
+读取当前页面侧边栏里可见的历史会话链接：
+
+```bash
+curl http://127.0.0.1:3123/chats
+```
+
+返回示例：
+
+```json
+{
+  "chats": [
+    {
+      "title": "Electron browser shell",
+      "url": "https://chatgpt.com/c/..."
+    }
+  ]
+}
+```
+
+注意：这只能读取当前页面上已经渲染出来、可见的历史会话。更早的历史可能需要你手动滚动侧边栏或使用 ChatGPT 自带搜索。
+
+### 打开历史会话
+
+推荐用 URL 打开，最稳定：
+
+```bash
+curl -X POST http://127.0.0.1:3123/open-chat \
+  -H "Content-Type: application/json" \
+  -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
+```
+
+也可以按当前可见标题打开：
+
+```bash
+curl -X POST http://127.0.0.1:3123/open-chat \
+  -H "Content-Type: application/json" \
+  -d "{\"title\":\"Electron browser shell\"}"
+```
+
 ## 安全设置
 
 Electron 远程页面配置：
@@ -124,6 +177,7 @@ Electron 远程页面配置：
 - 是否成功发送
 - 是否触发刷新
 - 是否触发新会话
+- 打开的历史会话 URL
 - 读取到的回复长度
 - 错误信息
 
@@ -152,3 +206,7 @@ ChatGPT 页面结构可能改版。如果出现类似 `Could not find ChatGPT in
 ### 新会话失败
 
 如果 `/new-chat` 返回找不到按钮，通常是页面结构改版、侧边栏被隐藏、或页面被登录/验证码弹窗挡住。可以先在窗口里手动点一次新聊天，或调用 `/refresh` 后再试。
+
+### 历史会话找不到
+
+`/chats` 和按标题 `/open-chat` 只能操作当前页面可见的会话链接。如果目标会话不在侧边栏当前渲染范围内，建议保存 `/status` 返回的 URL，以后用 `/open-url` 或按 URL 的 `/open-chat` 直接打开。

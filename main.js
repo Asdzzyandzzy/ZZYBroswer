@@ -275,6 +275,55 @@ function getAutomationScript() {
       return null;
     };
 
+    const normalizeChatUrl = (href) => {
+      try {
+        const url = new URL(href, location.origin);
+        if (url.hostname !== 'chatgpt.com') return null;
+        if (!url.pathname.startsWith('/c/')) return null;
+        return url.href;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const getVisibleChats = () => {
+      const seen = new Set();
+      const chats = [];
+
+      for (const link of document.querySelectorAll('a[href]')) {
+        const url = normalizeChatUrl(link.getAttribute('href'));
+        if (!url || seen.has(url) || !visible(link)) continue;
+
+        const title = textOf(link);
+        if (!title) continue;
+
+        seen.add(url);
+        chats.push({ title, url });
+      }
+
+      return chats;
+    };
+
+    const openChatByTitle = (title) => {
+      const needle = String(title || '').trim().toLowerCase();
+      if (!needle) return null;
+
+      const chats = getVisibleChats();
+      const exact = chats.find((chat) => chat.title.toLowerCase() === needle);
+      const partial = chats.find((chat) => chat.title.toLowerCase().includes(needle));
+      const match = exact || partial;
+      if (!match) return null;
+
+      const link = [...document.querySelectorAll('a[href]')].find((el) => {
+        const url = normalizeChatUrl(el.getAttribute('href'));
+        return url === match.url && visible(el);
+      });
+
+      if (!link) return null;
+      link.click();
+      return match;
+    };
+
     const waitForStableAssistant = async (previousText, timeoutMs) => {
       const startedAt = Date.now();
       let lastText = '';
@@ -380,6 +429,39 @@ function getAutomationScript() {
       };
     }
 
+    if (action === 'listChats') {
+      return {
+        chats: getVisibleChats()
+      };
+    }
+
+    if (action === 'openChat') {
+      const title = payload?.title;
+      const timeoutMs = payload?.timeoutMs || 120000;
+      const match = openChatByTitle(title);
+
+      if (!match) {
+        return {
+          ok: false,
+          notFound: true,
+          message: 'Could not find a visible chat with that title. Try /chats first, or use /open-url with a saved chat URL.'
+        };
+      }
+
+      await sleep(500);
+      const composerReady = await waitForComposer(timeoutMs);
+      if (!composerReady) {
+        throw new Error(`Opened chat "${match.title}", but composer was not ready after ${timeoutMs}ms.`);
+      }
+
+      return {
+        ok: true,
+        method: 'title',
+        title: match.title,
+        url: match.url
+      };
+    }
+
     throw new Error(`Unknown page automation action: ${action}`);
   };
 }
@@ -420,6 +502,60 @@ async function createNewChat() {
       url: win.webContents.getURL(),
       note: result.message
     };
+  }
+
+  return result;
+}
+
+function validateChatGptUrl(rawUrl) {
+  let parsed;
+
+  try {
+    parsed = new URL(rawUrl);
+  } catch (_error) {
+    throw new Error('url must be a valid absolute URL.');
+  }
+
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'chatgpt.com') {
+    throw new Error('url must start with https://chatgpt.com/.');
+  }
+
+  return parsed.href;
+}
+
+async function openUrl(rawUrl) {
+  const url = validateChatGptUrl(rawUrl);
+  const win = ensureWindow();
+  isPageLoaded = false;
+  await win.loadURL(url);
+
+  return {
+    ok: true,
+    method: 'loadURL',
+    url: win.webContents.getURL()
+  };
+}
+
+async function listChats() {
+  return runInPage(getAutomationScript().toString(), 'listChats', {});
+}
+
+async function openChat(body) {
+  if (body.url) {
+    return openUrl(body.url);
+  }
+
+  if (!body.title) {
+    throw new Error('Request body must include either url or title.');
+  }
+
+  const result = await runInPage(getAutomationScript().toString(), 'openChat', {
+    title: body.title,
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+
+  if (result.notFound) {
+    throw new Error(result.message);
   }
 
   return result;
@@ -510,9 +646,41 @@ function startApiServer() {
         return;
       }
 
+      if (req.method === 'POST' && url.pathname === '/open-url') {
+        const body = await readJsonBody(req);
+        const result = await openUrl(body.url);
+        log('Open URL requested', result.url);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/chats') {
+        const result = await listChats();
+        log('Listed visible chats', `count=${result.chats.length}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/open-chat') {
+        const body = await readJsonBody(req);
+        const result = await openChat(body);
+        log('Open chat requested', `method=${result.method} url=${result.url}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
       sendJson(res, 404, {
         error: 'Not found',
-        endpoints: ['GET /status', 'GET /last', 'POST /chat', 'POST /refresh', 'POST /new-chat']
+        endpoints: [
+          'GET /status',
+          'GET /last',
+          'GET /chats',
+          'POST /chat',
+          'POST /refresh',
+          'POST /new-chat',
+          'POST /open-url',
+          'POST /open-chat'
+        ]
       });
     } catch (error) {
       log('API error', error.message);
