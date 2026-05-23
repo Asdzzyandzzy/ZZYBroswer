@@ -237,6 +237,8 @@ curl.exe -X POST http://127.0.0.1:3123/project-chats ^
 curl.exe -X POST http://127.0.0.1:3123/new-project-chat
 ```
 
+这个接口会避免点击全局 New chat。它只会在当前 Project 上下文里使用 Project 专用入口；如果找不到 Project 专用的新聊天入口，会返回错误，而不是退回到普通 chat。
+
 先打开指定 Project，再新开 chat：
 
 ```bat

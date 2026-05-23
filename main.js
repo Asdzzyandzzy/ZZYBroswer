@@ -343,7 +343,7 @@ function getAutomationScript() {
           path.startsWith('/g/g-p-') ||
           raw.includes('project');
 
-        if (!looksProject || path.startsWith('/c/')) return null;
+        if (!looksProject) return null;
         return url.href;
       } catch (_error) {
         return null;
@@ -413,6 +413,81 @@ function getAutomationScript() {
         title: matchingProject?.title || document.title || '',
         url: currentUrl,
         projectId: projectIdFromUrl(currentUrl)
+      };
+    };
+
+    const clickNewProjectChat = () => {
+      const project = getCurrentProject();
+      if (!project?.projectId) {
+        return {
+          ok: false,
+          notInProject: true,
+          message: 'Current page does not look like a Project. Open a Project first or pass { url } / { title }.'
+        };
+      }
+
+      const currentChatId = chatIdFromUrl(location.href);
+      if (!currentChatId && findComposer()) {
+        return {
+          ok: true,
+          method: 'project-composer-already-ready',
+          url: location.href,
+          project
+        };
+      }
+
+      const roots = [
+        document.querySelector('main'),
+        document.querySelector('[role="main"]'),
+        document.body
+      ].filter(Boolean);
+
+      for (const root of roots) {
+        const rootIsMain = root.tagName === 'MAIN' || root.getAttribute('role') === 'main';
+        const candidates = [...root.querySelectorAll('a[href], button')].filter((el) => {
+          if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+
+          const href = el.getAttribute('href') || '';
+          let normalizedHref = '';
+          try {
+            normalizedHref = href ? new URL(href, location.origin).href : '';
+          } catch (_error) {
+            normalizedHref = '';
+          }
+          const label = `${textOf(el)} ${el.getAttribute('aria-label') || ''} ${el.title || ''} ${el.dataset.testid || ''}`.toLowerCase();
+
+          if (href === '/' || href === '/?model=auto') return false;
+          if (el.closest('nav') || el.closest('aside')) return false;
+
+          const mentionsChat = label.includes('new chat') ||
+            label.includes('start chat') ||
+            label.includes('new conversation') ||
+            label.includes('chat') ||
+            label.includes('新聊天');
+          const mentionsProject = label.includes('project') ||
+            label.includes('项目') ||
+            rootIsMain ||
+            normalizedHref.toLowerCase().includes(project.projectId.toLowerCase()) ||
+            normalizedHref.toLowerCase().includes('project');
+
+          return mentionsChat && mentionsProject;
+        });
+
+        if (candidates.length) {
+          candidates[0].click();
+          return {
+            ok: true,
+            method: 'project-scoped-button',
+            url: location.href,
+            project
+          };
+        }
+      }
+
+      return {
+        ok: false,
+        notFound: true,
+        message: 'Could not find a Project-scoped New chat button. I avoided the global New chat because it leaves the Project.'
       };
     };
 
@@ -690,6 +765,25 @@ function getAutomationScript() {
       };
     }
 
+    if (action === 'newProjectChat') {
+      const timeoutMs = payload?.timeoutMs || 120000;
+      const result = clickNewProjectChat();
+
+      if (!result.ok) return result;
+
+      await sleep(500);
+      const composerReady = await waitForComposer(timeoutMs);
+      if (!composerReady) {
+        throw new Error(`Project new chat action (${result.method}) did not produce a ready composer after ${timeoutMs}ms.`);
+      }
+
+      return {
+        ...result,
+        url: location.href,
+        project: getCurrentProject() || result.project
+      };
+    }
+
     if (action === 'newProject') {
       const name = payload?.name;
       const timeoutMs = payload?.timeoutMs || 120000;
@@ -934,17 +1028,25 @@ async function createNewProjectChat(body = {}) {
     project = await openProject(body);
   }
 
-  const chat = await createNewChat();
+  const chat = await runInPage(getAutomationScript().toString(), 'newProjectChat', {
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+
+  if (chat.notInProject || chat.notFound) {
+    throw new Error(chat.message);
+  }
+
+  const chatWithIds = withIds(chat);
 
   return {
     ok: true,
     project,
-    chat,
+    chat: chatWithIds,
     ids: {
-      projectId: project?.ids?.projectId || chat?.ids?.projectId || null,
-      chatId: chat?.ids?.chatId || null,
-      projectChatId: chat?.ids?.projectChatId || null,
-      pageType: chat?.ids?.pageType || 'unknown'
+      projectId: project?.ids?.projectId || chatWithIds.ids.projectId || chatWithIds.project?.projectId || null,
+      chatId: chatWithIds.ids.chatId || null,
+      projectChatId: chatWithIds.ids.projectChatId || null,
+      pageType: chatWithIds.ids.pageType || 'unknown'
     }
   };
 }
