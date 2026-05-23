@@ -324,6 +324,173 @@ function getAutomationScript() {
       return match;
     };
 
+    const normalizeProjectUrl = (href) => {
+      try {
+        const url = new URL(href, location.origin);
+        if (url.hostname !== 'chatgpt.com') return null;
+
+        const path = url.pathname.toLowerCase();
+        const raw = `${url.pathname}${url.search}`.toLowerCase();
+        const looksProject =
+          path.startsWith('/project') ||
+          path.includes('/project/') ||
+          path.startsWith('/g/g-p-') ||
+          raw.includes('project');
+
+        if (!looksProject || path.startsWith('/c/')) return null;
+        return url.href;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const getVisibleProjects = () => {
+      const seen = new Set();
+      const projects = [];
+
+      for (const link of document.querySelectorAll('a[href]')) {
+        const url = normalizeProjectUrl(link.getAttribute('href'));
+        if (!url || seen.has(url) || !visible(link)) continue;
+
+        const title = textOf(link);
+        if (!title) continue;
+
+        seen.add(url);
+        projects.push({ title, url });
+      }
+
+      return projects;
+    };
+
+    const openProjectByTitle = (title) => {
+      const needle = String(title || '').trim().toLowerCase();
+      if (!needle) return null;
+
+      const projects = getVisibleProjects();
+      const exact = projects.find((project) => project.title.toLowerCase() === needle);
+      const partial = projects.find((project) => project.title.toLowerCase().includes(needle));
+      const match = exact || partial;
+      if (!match) return null;
+
+      const link = [...document.querySelectorAll('a[href]')].find((el) => {
+        const url = normalizeProjectUrl(el.getAttribute('href'));
+        return url === match.url && visible(el);
+      });
+
+      if (!link) return null;
+      link.click();
+      return match;
+    };
+
+    const getCurrentProject = () => {
+      const currentUrl = normalizeProjectUrl(location.href);
+      if (!currentUrl) return null;
+
+      const matchingProject = getVisibleProjects().find((project) => project.url === currentUrl);
+      return {
+        title: matchingProject?.title || document.title || '',
+        url: currentUrl
+      };
+    };
+
+    const clickNewProject = () => {
+      const selectors = [
+        '[data-testid*="new-project"]',
+        '[data-testid*="create-project"]',
+        '[aria-label*="New project"]',
+        '[aria-label*="Create project"]',
+        '[aria-label*="新项目"]',
+        '[aria-label*="创建项目"]'
+      ];
+
+      for (const selector of selectors) {
+        const el = [...document.querySelectorAll(selector)].find(visible);
+        if (el) {
+          el.click();
+          return selector;
+        }
+      }
+
+      const button = [...document.querySelectorAll('a, button')].find((el) => {
+        if (!visible(el)) return false;
+        const label = `${textOf(el)} ${el.getAttribute('aria-label') || ''} ${el.title || ''}`.toLowerCase();
+        return label.includes('new project') ||
+          label.includes('create project') ||
+          label.includes('新项目') ||
+          label.includes('创建项目');
+      });
+
+      if (button) {
+        button.click();
+        return 'text-match';
+      }
+
+      return null;
+    };
+
+    const findDialogTextInput = () => {
+      const dialog = document.querySelector('[role="dialog"]') || document.body;
+      const candidates = [
+        ...dialog.querySelectorAll('input[type="text"]'),
+        ...dialog.querySelectorAll('textarea'),
+        ...dialog.querySelectorAll('[contenteditable="true"]')
+      ];
+
+      return candidates.find((el) => visible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true') || null;
+    };
+
+    const clickCreateProjectSubmit = () => {
+      const dialog = document.querySelector('[role="dialog"]') || document.body;
+      const button = [...dialog.querySelectorAll('button')].find((el) => {
+        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+        const label = `${textOf(el)} ${el.getAttribute('aria-label') || ''} ${el.title || ''}`.toLowerCase();
+        return label.includes('create') || label.includes('done') || label.includes('创建') || label.includes('完成');
+      });
+
+      if (!button) return false;
+      button.click();
+      return true;
+    };
+
+    const createProject = async (name, timeoutMs) => {
+      const clicked = clickNewProject();
+      if (!clicked) {
+        return {
+          ok: false,
+          notFound: true,
+          message: 'Could not find New project/Create project button. Try opening or expanding the Projects area manually.'
+        };
+      }
+
+      await sleep(500);
+      const input = findDialogTextInput();
+      if (!input) {
+        throw new Error(`Clicked New project (${clicked}), but could not find a visible project name input.`);
+      }
+
+      setComposerValue(input, name);
+      await sleep(200);
+
+      if (!clickCreateProjectSubmit()) {
+        throw new Error('Could not find enabled Create/Done button in the project dialog.');
+      }
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const project = getCurrentProject();
+        if (project) {
+          return {
+            ok: true,
+            method: clicked,
+            project
+          };
+        }
+        await sleep(500);
+      }
+
+      throw new Error(`Project was submitted, but no project page was detected after ${timeoutMs}ms.`);
+    };
+
     const waitForStableAssistant = async (previousText, timeoutMs) => {
       const startedAt = Date.now();
       let lastText = '';
@@ -462,6 +629,55 @@ function getAutomationScript() {
       };
     }
 
+    if (action === 'listProjects') {
+      return {
+        projects: getVisibleProjects()
+      };
+    }
+
+    if (action === 'openProject') {
+      const title = payload?.title;
+      const timeoutMs = payload?.timeoutMs || 120000;
+      const match = openProjectByTitle(title);
+
+      if (!match) {
+        return {
+          ok: false,
+          notFound: true,
+          message: 'Could not find a visible project with that title. Try /projects first, expand the Projects area, or use /open-url with a saved project URL.'
+        };
+      }
+
+      await sleep(500);
+      const composerReady = await waitForComposer(timeoutMs);
+
+      return {
+        ok: true,
+        method: 'title',
+        title: match.title,
+        url: match.url,
+        composerReady
+      };
+    }
+
+    if (action === 'listProjectChats') {
+      return {
+        project: getCurrentProject(),
+        chats: getVisibleChats()
+      };
+    }
+
+    if (action === 'newProject') {
+      const name = payload?.name;
+      const timeoutMs = payload?.timeoutMs || 120000;
+
+      if (!name || typeof name !== 'string') {
+        throw new Error('Request body must include a non-empty string field: name.');
+      }
+
+      return createProject(name, timeoutMs);
+    }
+
     throw new Error(`Unknown page automation action: ${action}`);
   };
 }
@@ -559,6 +775,68 @@ async function openChat(body) {
   }
 
   return result;
+}
+
+async function listProjects() {
+  return runInPage(getAutomationScript().toString(), 'listProjects', {});
+}
+
+async function openProject(body) {
+  if (body.url) {
+    return openUrl(body.url);
+  }
+
+  if (!body.title) {
+    throw new Error('Request body must include either url or title.');
+  }
+
+  const result = await runInPage(getAutomationScript().toString(), 'openProject', {
+    title: body.title,
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+
+  if (result.notFound) {
+    throw new Error(result.message);
+  }
+
+  return result;
+}
+
+async function listProjectChats(body = {}) {
+  if (body.url || body.title) {
+    await openProject(body);
+  }
+
+  return runInPage(getAutomationScript().toString(), 'listProjectChats', {});
+}
+
+async function createNewProject(body) {
+  const result = await runInPage(getAutomationScript().toString(), 'newProject', {
+    name: body.name,
+    timeoutMs: REQUEST_TIMEOUT_MS
+  });
+
+  if (result.notFound) {
+    throw new Error(result.message);
+  }
+
+  return result;
+}
+
+async function createNewProjectChat(body = {}) {
+  let project = null;
+
+  if (body.url || body.title) {
+    project = await openProject(body);
+  }
+
+  const chat = await createNewChat();
+
+  return {
+    ok: true,
+    project,
+    chat
+  };
 }
 
 function refreshPage() {
@@ -669,17 +947,69 @@ function startApiServer() {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/projects') {
+        const result = await listProjects();
+        log('Listed visible projects', `count=${result.projects.length}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/open-project') {
+        const body = await readJsonBody(req);
+        const result = await openProject(body);
+        log('Open project requested', `method=${result.method} url=${result.url}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/project-chats') {
+        const result = await listProjectChats();
+        log('Listed visible project chats', `count=${result.chats.length}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/project-chats') {
+        const body = await readJsonBody(req);
+        const result = await listProjectChats(body);
+        log('Listed visible project chats', `count=${result.chats.length}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/new-project') {
+        const body = await readJsonBody(req);
+        const result = await createNewProject(body);
+        log('New project requested', `name=${body.name}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/new-project-chat') {
+        const body = await readJsonBody(req);
+        const result = await createNewProjectChat(body);
+        log('New project chat requested', `project=${body.url || body.title || 'current'}`);
+        sendJson(res, 200, result);
+        return;
+      }
+
       sendJson(res, 404, {
         error: 'Not found',
         endpoints: [
           'GET /status',
           'GET /last',
           'GET /chats',
+          'GET /projects',
+          'GET /project-chats',
           'POST /chat',
           'POST /refresh',
           'POST /new-chat',
           'POST /open-url',
-          'POST /open-chat'
+          'POST /open-chat',
+          'POST /open-project',
+          'POST /project-chats',
+          'POST /new-project',
+          'POST /new-project-chat'
         ]
       });
     } catch (error) {

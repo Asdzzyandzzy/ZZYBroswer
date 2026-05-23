@@ -1,24 +1,54 @@
 # ZZY Browser
 
-一个最小可运行的 Electron + Node.js 本地可编程浏览器壳。它打开真实的 `https://chatgpt.com` 页面，并在本机 `127.0.0.1:3123` 暴露 HTTP API，用于把 prompt 输入到页面、发送、读取最新回复。
+一个最小可运行的 Electron + Node.js 本地可编程浏览器壳。它打开真实的 `https://chatgpt.com` 页面，并在本机 `127.0.0.1:3123` 暴露 HTTP API，用于控制当前可见网页。
 
-它不会绕过验证码、破解登录或调用非公开接口。你仍然会看到真实浏览器窗口，可以手动登录、处理验证码、切换模型和调整页面状态。
+它不会绕过验证码、破解登录或调用非公开接口。你仍然会看到真实浏览器窗口，可以手动登录、处理验证码、切换模型、打开历史对话和进入 Project。
 
 ## 安装
 
-```bash
-npm install
+```bat
+npm.cmd install
 ```
 
 ## 启动
 
-```bash
-npm start
+```bat
+npm.cmd start
 ```
 
 第一次启动后，在打开的 Electron 窗口里手动登录 ChatGPT。应用使用 Electron 的持久化 session：`persist:chatgpt`，会保留 Cookie 和登录态。
 
-## API
+## Windows curl 注意事项
+
+Windows `cmd` 里不要使用 Linux/macOS 的 `\` 续行。下面这种写法是错的：
+
+```bash
+curl -X POST http://127.0.0.1:3123/open-chat \ -H "Content-Type: application/json" \ -d "{\"url\":\"...\"}"
+```
+
+在 Windows `cmd` 里，请用一整行：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-chat -H "Content-Type: application/json" -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
+```
+
+或者用 `^` 续行：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
+```
+
+PowerShell 里可以用反引号续行：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:3123/open-chat `
+  -H "Content-Type: application/json" `
+  -d '{"url":"https://chatgpt.com/c/your-chat-id"}'
+```
+
+## API 总览
 
 本地 API 只监听：
 
@@ -26,135 +56,182 @@ npm start
 http://127.0.0.1:3123
 ```
 
-### 查看状态
+| Method | Path | 功能 |
+| --- | --- | --- |
+| `GET` | `/status` | 查看当前 URL、加载状态、是否看起来已登录 |
+| `POST` | `/chat` | 向当前页面发送 prompt，并返回最新 assistant 回复 |
+| `GET` | `/last` | 读取当前页面最后一条 assistant 回复 |
+| `POST` | `/refresh` | 强制刷新当前 ChatGPT 页面 |
+| `POST` | `/new-chat` | 新开普通会话 |
+| `GET` | `/chats` | 读取当前侧边栏可见的历史 chat |
+| `POST` | `/open-chat` | 按 URL 或可见标题打开历史 chat |
+| `POST` | `/open-url` | 打开 `https://chatgpt.com/...` URL |
+| `GET` | `/projects` | 读取当前页面可见的 Project |
+| `POST` | `/open-project` | 按 URL 或可见标题打开 Project |
+| `GET` | `/project-chats` | 读取当前 Project 页面里可见的历史 chat |
+| `POST` | `/project-chats` | 先打开 Project，再读取其中可见历史 chat |
+| `POST` | `/new-project` | 尝试通过网页 UI 新建 Project |
+| `POST` | `/new-project-chat` | 在当前或指定 Project 里新开 chat |
 
-```bash
-curl http://127.0.0.1:3123/status
+## 基础调用
+
+查看状态：
+
+```bat
+curl.exe http://127.0.0.1:3123/status
 ```
 
-返回示例：
+发送消息：
 
-```json
-{
-  "url": "https://chatgpt.com/",
-  "loaded": true,
-  "looksLoggedIn": true
-}
-```
-
-### 发送消息
-
-```bash
-curl -X POST http://127.0.0.1:3123/chat \
-  -H "Content-Type: application/json" \
+```bat
+curl.exe -X POST http://127.0.0.1:3123/chat ^
+  -H "Content-Type: application/json" ^
   -d "{\"prompt\":\"你好，请用一句话介绍你自己。\"}"
 ```
 
-返回示例：
+读取最后一条回复：
 
-```json
-{
-  "text": "你好，我是 ChatGPT，可以帮助你写作、编程、分析问题和整理信息。",
-  "length": 37,
-  "sendMethod": "button"
-}
+```bat
+curl.exe http://127.0.0.1:3123/last
 ```
 
-`POST /chat` 会：
+刷新页面：
 
-1. 查找输入框，优先尝试 `textarea`、`contenteditable`、`.ProseMirror`、`#prompt-textarea`。
-2. 写入 prompt。
-3. 优先点击发送按钮，找不到按钮时尝试回车发送。
-4. 等待 assistant 回复完成，最多等待 120 秒。
-5. 返回最新 assistant 回复文本。
-
-### 读取最后一条回复
-
-```bash
-curl http://127.0.0.1:3123/last
+```bat
+curl.exe -X POST http://127.0.0.1:3123/refresh
 ```
 
-优先读取：
+新开普通会话：
 
-```css
-[data-message-author-role="assistant"]
+```bat
+curl.exe -X POST http://127.0.0.1:3123/new-chat
 ```
 
-如果找不到，会尝试少量可读消息区域作为 fallback。仍然找不到时会返回清晰错误。
+## 历史 Chat
 
-### 刷新页面
+列出当前侧边栏可见的历史 chat：
 
-如果 ChatGPT 页面卡住，可以调用：
-
-```bash
-curl -X POST http://127.0.0.1:3123/refresh
+```bat
+curl.exe http://127.0.0.1:3123/chats
 ```
 
-这会刷新当前 Electron 窗口里的 ChatGPT 页面，不会清除持久化 session 或 Cookie。刷新后如果页面要求登录、验证码或人工确认，请在可见窗口里手动处理。
+推荐保存 `/status` 返回的 `url`，以后直接打开。按 URL 打开最稳定：
 
-也可以在应用菜单里点击 `View -> Reload ChatGPT`，或使用快捷键 `Ctrl+R`。如果普通刷新没反应，点击 `View -> Hard Reload ChatGPT`，或使用 `Ctrl+Shift+R`。
-
-### 新开会话
-
-如果当前对话上下文太长，或者你希望从一个干净会话开始，可以调用：
-
-```bash
-curl -X POST http://127.0.0.1:3123/new-chat
-```
-
-它会优先点击 ChatGPT 页面里的 New chat/新聊天按钮。如果找不到按钮，会兜底重新加载 `https://chatgpt.com/`。
-
-### 打开历史会话 URL
-
-如果你保存过某个 ChatGPT 会话 URL，可以直接打开：
-
-```bash
-curl -X POST http://127.0.0.1:3123/open-url \
-  -H "Content-Type: application/json" \
-  -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
-```
-
-为了安全，`/open-url` 只允许打开 `https://chatgpt.com/...`。
-
-### 列出可见历史会话
-
-读取当前页面侧边栏里可见的历史会话链接：
-
-```bash
-curl http://127.0.0.1:3123/chats
-```
-
-返回示例：
-
-```json
-{
-  "chats": [
-    {
-      "title": "Electron browser shell",
-      "url": "https://chatgpt.com/c/..."
-    }
-  ]
-}
-```
-
-注意：这只能读取当前页面上已经渲染出来、可见的历史会话。更早的历史可能需要你手动滚动侧边栏或使用 ChatGPT 自带搜索。
-
-### 打开历史会话
-
-推荐用 URL 打开，最稳定：
-
-```bash
-curl -X POST http://127.0.0.1:3123/open-chat \
-  -H "Content-Type: application/json" \
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-chat ^
+  -H "Content-Type: application/json" ^
   -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
 ```
 
 也可以按当前可见标题打开：
 
-```bash
-curl -X POST http://127.0.0.1:3123/open-chat \
-  -H "Content-Type: application/json" \
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-chat ^
+  -H "Content-Type: application/json" ^
   -d "{\"title\":\"Electron browser shell\"}"
+```
+
+直接打开任意 ChatGPT URL：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-url ^
+  -H "Content-Type: application/json" ^
+  -d "{\"url\":\"https://chatgpt.com/c/your-chat-id\"}"
+```
+
+为了安全，`/open-url` 只允许打开 `https://chatgpt.com/...`。
+
+## Projects
+
+Projects 相关功能是网页 UI 自动化，比普通 chat 更容易受 ChatGPT 页面改版影响。最稳的方式仍然是保存 Project URL，然后按 URL 打开。
+
+列出当前页面可见的 Project：
+
+```bat
+curl.exe http://127.0.0.1:3123/projects
+```
+
+按 URL 打开 Project：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-project ^
+  -H "Content-Type: application/json" ^
+  -d "{\"url\":\"https://chatgpt.com/project/your-project-id\"}"
+```
+
+按当前可见标题打开 Project：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/open-project ^
+  -H "Content-Type: application/json" ^
+  -d "{\"title\":\"My Project\"}"
+```
+
+读取当前 Project 页面里可见的历史 chat：
+
+```bat
+curl.exe http://127.0.0.1:3123/project-chats
+```
+
+先打开指定 Project，再读取其中可见历史 chat：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/project-chats ^
+  -H "Content-Type: application/json" ^
+  -d "{\"url\":\"https://chatgpt.com/project/your-project-id\"}"
+```
+
+在当前 Project 中新开 chat：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/new-project-chat
+```
+
+先打开指定 Project，再新开 chat：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/new-project-chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"url\":\"https://chatgpt.com/project/your-project-id\"}"
+```
+
+尝试新建 Project：
+
+```bat
+curl.exe -X POST http://127.0.0.1:3123/new-project ^
+  -H "Content-Type: application/json" ^
+  -d "{\"name\":\"My New Project\"}"
+```
+
+`/new-project` 会尝试点击页面里的 New project/Create project，填写名称，然后点击 Create/Done。这个接口最容易受 UI 改版影响；如果失败，请在可见窗口里手动创建 Project，再用 `/status` 保存 URL。
+
+## 让其他项目调用
+
+Node.js 示例：
+
+```js
+const res = await fetch('http://127.0.0.1:3123/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ prompt: '请只返回 JSON：{"ok":true,"message":"hello"}' })
+});
+
+const data = await res.json();
+console.log(data.text);
+```
+
+Python 示例：
+
+```python
+import requests
+
+res = requests.post(
+    "http://127.0.0.1:3123/chat",
+    json={"prompt": "请只返回 JSON，不要 Markdown：{\"ok\": true}"}
+)
+
+data = res.json()
+print(data["text"])
 ```
 
 ## 安全设置
@@ -168,24 +245,13 @@ Electron 远程页面配置：
 
 本地 HTTP API 只绑定 `127.0.0.1`，不会监听局域网地址。
 
-## 日志
-
-启动后终端会打印：
-
-- 每次 API 调用
-- 页面加载状态
-- 是否成功发送
-- 是否触发刷新
-- 是否触发新会话
-- 打开的历史会话 URL
-- 读取到的回复长度
-- 错误信息
+ChatGPT Cookie/session 保存在你本机 Electron 用户数据目录里，不在 Git 仓库里，不会 push 到 GitHub。
 
 ## 常见问题
 
 ### 选择器失效
 
-ChatGPT 页面结构可能改版。如果出现类似 `Could not find ChatGPT input box` 或 `No assistant reply found`，说明输入框或回复区域选择器可能需要更新。主要逻辑在 `main.js` 的页面自动化脚本里。
+ChatGPT 页面结构可能改版。如果出现类似 `Could not find ChatGPT input box`、`No assistant reply found`、`Could not find a visible project`，说明页面选择器可能需要更新。主要逻辑在 `main.js` 的页面自动化脚本里。
 
 ### 登录过期
 
@@ -195,18 +261,10 @@ ChatGPT 页面结构可能改版。如果出现类似 `Could not find ChatGPT in
 
 应用不会绕过验证码。遇到验证码时，请在可见的 Electron 窗口中手动完成。
 
-### 页面改版或模型切换
+### 历史会话或 Project 找不到
 
-这是本地用户可见网页自动化，不是稳定的官方 API。页面改版、模型菜单变化、发送按钮变化都可能导致自动化失败。你可以先在窗口中手动调整到目标模型或新会话，再调用本地 API。
+`/chats`、`/projects`、按标题 `/open-chat`、按标题 `/open-project` 只能操作当前页面可见、已经渲染出来的链接。目标不在当前可见范围内时，请手动滚动/展开侧边栏，或者保存 URL 后用 URL 打开。
 
 ### 回复超时
 
 `POST /chat` 默认最多等待 120 秒。网络慢、页面卡住、登录状态异常、或 ChatGPT 正在要求人工操作时可能超时。终端日志会显示对应错误。
-
-### 新会话失败
-
-如果 `/new-chat` 返回找不到按钮，通常是页面结构改版、侧边栏被隐藏、或页面被登录/验证码弹窗挡住。可以先在窗口里手动点一次新聊天，或调用 `/refresh` 后再试。
-
-### 历史会话找不到
-
-`/chats` 和按标题 `/open-chat` 只能操作当前页面可见的会话链接。如果目标会话不在侧边栏当前渲染范围内，建议保存 `/status` 返回的 URL，以后用 `/open-url` 或按 URL 的 `/open-chat` 直接打开。
