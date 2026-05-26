@@ -3,8 +3,15 @@
   "version": "0.1.0",
   "description": "Create a local HTTP API service from the logged-in ChatGPT web app.",
   "main": "main.js",
+  "bin": {
+    "chatgpt-local-api": "cli.js"
+  },
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "api": "node cli.js",
+    "ask": "node cli.js ask",
+    "novel:plan": "node cli.js novel-plan",
+    "novel:demo": "node examples/novel-workflow.js"
   },
   "keywords": [
     "electron",

@@ -82,6 +82,15 @@ http://127.0.0.1:3123
 
 ## Daily use
 
+The HTTP API is still there, but the CLI is easier for scripts and agents.
+
+```bat
+npm.cmd run api -- status
+npm.cmd run api -- ask "Say hello in one sentence."
+npm.cmd run api -- ask-file prompt.txt
+npm.cmd run api -- novel-plan "A detective story set inside a spreadsheet"
+```
+
 Check where the page is:
 
 ```bat
@@ -213,16 +222,14 @@ curl.exe http://127.0.0.1:3123/debug/project-chat-candidates
 
 ## From another program
 
+The zero-dependency Node client lives in `client.js`.
+
 Node.js:
 
 ```js
-const res = await fetch('http://127.0.0.1:3123/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ prompt: 'Return only JSON: {"ok":true}' })
-});
+const api = require('./client');
 
-const data = await res.json();
+const data = await api.chat('Return only JSON: {"ok":true}');
 console.log(data.text);
 ```
 
@@ -237,6 +244,36 @@ res = requests.post(
 )
 
 print(res.json()["text"])
+```
+
+## Codex or local agent usage
+
+If another local coding agent can run shell commands, the simplest integration is the CLI:
+
+```bat
+npm.cmd run api -- ask "Summarize this bug report and return JSON."
+```
+
+For larger prompts, write a prompt file and call:
+
+```bat
+npm.cmd run api -- ask-file prompt.txt
+```
+
+This can help offload drafting, brainstorming, summarizing, or long-form generation to the visible ChatGPT web app while keeping the local agent focused on file edits and verification.
+
+## Novel workflow demo
+
+There is a small example that starts a fresh chat, asks ChatGPT for a novel plan, then drafts chapter 1 into `output/`:
+
+```bat
+npm.cmd run novel:demo -- "A quiet fantasy novel about a city that predicts its own weather through dreams"
+```
+
+For just a plan:
+
+```bat
+npm.cmd run novel:plan -- "A political thriller about an accountant who finds impossible numbers"
 ```
 
 ## Practical notes

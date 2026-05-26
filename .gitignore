@@ -2,6 +2,7 @@ node_modules/
 .tools/
 dist/
 out/
+output/
 *.log
 npm-debug.log*
 yarn-debug.log*
