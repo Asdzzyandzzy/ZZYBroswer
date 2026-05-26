@@ -1,10 +1,15 @@
 const { app, BrowserWindow, Menu, session } = require('electron');
 const http = require('node:http');
+const path = require('node:path');
 
 const CHATGPT_URL = 'https://chatgpt.com';
 const HOST = '127.0.0.1';
 const PORT = 3123;
 const REQUEST_TIMEOUT_MS = 120_000;
+const STABLE_USER_DATA_NAME = 'zzy-browser';
+
+app.setPath('userData', path.join(app.getPath('appData'), STABLE_USER_DATA_NAME));
+app.setName('ChatGPT Local API Creator');
 
 let mainWindow;
 let isPageLoaded = false;
